@@ -375,6 +375,57 @@ async function capture(params) {
   return saveCapture(page, { requestedUrl: page.url(), selector, startedAt, profile, proxy: entry.useTor ? "tor" : "direct" });
 }
 
+const stepActions = new Set(["goto", "click", "fill", "press", "select", "check", "hover", "scroll", "wait_selector", "wait_ms", "eval"]);
+
+async function interact(params) {
+  const profile = profileName(params.get("profile"));
+  const useTor = parseProxyParam(params.get("proxy"));
+  const startedAt = Date.now();
+  let steps;
+  try {
+    steps = JSON.parse(params.get("steps") || "[]");
+  } catch {
+    throw new Error("steps must be a JSON array");
+  }
+  if (!Array.isArray(steps) || steps.length > 25) throw new Error("steps must be an array of up to 25 actions");
+  const entry = await ensureProfile(profile, useTor);
+  const page = await resolvePage(entry);
+  const stepResults = [];
+  for (const step of steps) {
+    const action = step?.action;
+    if (!stepActions.has(action)) throw new Error(`unknown step action '${action}'`);
+    const summary = { action };
+    switch (action) {
+      case "goto": {
+        summary.url = validateUrl(step.url).href;
+        await page.goto(summary.url, { waitUntil: "domcontentloaded", timeout: 60000 });
+        entry.requestedUrl = summary.url;
+        break;
+      }
+      case "click": summary.selector = step.selector; await page.click(step.selector, { timeout: 15000 }); break;
+      case "fill": summary.selector = step.selector; await page.fill(step.selector, String(step.value ?? ""), { timeout: 15000 }); break;
+      case "press": summary.key = step.key || "Enter"; await page.keyboard.press(summary.key); break;
+      case "select": summary.selector = step.selector; await page.selectOption(step.selector, String(step.value ?? ""), { timeout: 15000 }); break;
+      case "check": summary.selector = step.selector; await page.check(step.selector, { timeout: 15000 }); break;
+      case "hover": summary.selector = step.selector; await page.hover(step.selector, { timeout: 15000 }); break;
+      case "scroll": await page.evaluate(() => window.scrollBy(0, Math.round(window.innerHeight * 2))); break;
+      case "wait_selector": summary.selector = step.selector; await page.waitForSelector(step.selector, { timeout: Number(step.ms) || 15000 }); break;
+      case "wait_ms": await page.waitForTimeout(Math.min(Number(step.ms) || 1000, 30000)); break;
+      case "eval": {
+        summary.expression = step.expression;
+        const value = await page.evaluate(step.expression);
+        summary.value = typeof value === "string" ? value.slice(0, 2000) : value;
+        break;
+      }
+    }
+    stepResults.push(summary);
+  }
+  entry.lastUsed = Date.now();
+  await waitForPage(page, null, 3);
+  const result = await saveCapture(page, { requestedUrl: page.url(), selector: null, startedAt, profile, proxy: entry.useTor ? "tor" : "direct" });
+  return { ...result, step_results: stepResults };
+}
+
 async function listProfiles() {
   await pruneExited();
   const diskEntries = await fs.readdir(profilesRoot, { withFileTypes: true }).catch(() => []);
@@ -418,7 +469,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/tor_status") {
       return jsonResponse(response, 200, await torStatus());
     }
-    if (request.method !== "POST" || !["/scrape", "/capture", "/profile_stop", "/test_cookie", "/tor_new_identity"].includes(request.url)) {
+    if (request.method !== "POST" || !["/scrape", "/capture", "/interact", "/profile_stop", "/test_cookie", "/tor_new_identity"].includes(request.url)) {
       return jsonResponse(response, 404, { error: "Not found" });
     }
 
@@ -455,7 +506,7 @@ const server = http.createServer(async (request, response) => {
       await session.detach().catch(() => {});
       return jsonResponse(response, 200, { profile: name, cookie_set: params.get("name") || "mcp_session" });
     }
-    const operation = request.url === "/scrape" ? () => scrape(params) : () => capture(params);
+    const operation = request.url === "/scrape" ? () => scrape(params) : request.url === "/interact" ? () => interact(params) : () => capture(params);
     return jsonResponse(response, 200, await enqueue(operation));
   } catch (error) {
     return jsonResponse(response, 400, { error: error.message });

@@ -18,6 +18,7 @@ Usage:
   recon-browser.sh capture [--profile NAME] [--tor|--direct] [--selector CSS]
   recon-browser.sh profiles           # list persistent browser profiles
   recon-browser.sh profile-stop NAME  # stop one profile's Chromium (cookies persist)
+  recon-browser.sh interact '<steps-json>' [--profile NAME] [--tor|--direct]
   recon-browser.sh tor-status         # Tor bootstrap/circuit state
   recon-browser.sh tor-rotate         # SIGNAL NEWNYM: new exit IP
   recon-browser.sh stop               # docker compose down
@@ -88,6 +89,20 @@ case "$command" in
       esac
     done
     request capture "${args[@]}"
+    ;;
+  interact)
+    steps="${2:-}"; [[ -n "$steps" ]] || { usage >&2; exit 2; }
+    shift 2
+    args=(--data-urlencode "steps=$steps")
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --profile) args+=(--data-urlencode "profile=$2"); shift 2 ;;
+        --tor) args+=(--data-urlencode "proxy=tor"); shift ;;
+        --direct) args+=(--data-urlencode "proxy=direct"); shift ;;
+        *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
+      esac
+    done
+    request interact "${args[@]}"
     ;;
   profiles)
     curl --silent --show-error --fail "$API/profiles" || echo "(container not reachable)"

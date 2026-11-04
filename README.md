@@ -37,11 +37,29 @@ skill's image already exists.
 | `browser_stop` | `docker compose down` (profiles and captures persist) |
 | `browser_scrape` | Navigate the profile's Chromium to a URL, wait for JS/challenges, save artifacts; returns page text inline + `host_capture_dir`; auto-starts the container |
 | `browser_capture` | Re-capture the profile's current tab without navigating (after solving a CAPTCHA or logging in via noVNC) |
+| `browser_interact` | Ordered Playwright actions on the current page — `goto, click, fill, press, select, check, hover, scroll, wait_selector, wait_ms, eval` — ending in a full capture (search boxes, filters, pagination, JS checks) |
 | `browser_profiles` | List named sessions: running?, cookie counts, last use — works even when the container is down |
 | `browser_stop_profile` | Stop one profile's Chromium (cookies flush to disk; other sessions keep running) |
 | `browser_read` | Read `page.txt` / `page.html` / `links.json` / `metadata.json` / `screenshot.png` from any capture (default: latest), with offset paging |
 | `browser_tor_status` | Tor bootstrap %, circuit state, SOCKS URL |
 | `browser_new_identity` | `SIGNAL NEWNYM`: rotate the Tor circuit → new exit IP |
+
+## Interacting like a user
+
+```
+browser_interact { profile: "merca", steps: [
+  { action: "goto",          url: "https://www.mercadolibre.com.ar/" },
+  { action: "wait_selector", selector: "input.nav-search-input" },
+  { action: "fill",          selector: "input.nav-search-input", value: "disco rigido 1tb barato" },
+  { action: "press",         key: "Enter" },
+  { action: "wait_selector", selector: ".ui-search-layout__item" }
+]}
+# → lands on the results listing; capture + page text come back in the same call
+```
+
+`eval` runs a JS expression in the page and returns its value in `step_results`
+(useful to read state or extract data). All actions run in the profile's own
+Chromium, so they use its session (and Tor mode when enabled).
 
 ## Sessions (profiles)
 

@@ -126,7 +126,21 @@ const profilesWithTor = await call("browser_profiles");
 assert.equal(profilesWithTor.profiles.find((entry) => entry.name === "tortest")?.proxy, "direct");
 console.log(`8. tor: bootstrap OK, exit=${exitIp1} tras NEWNYM exit=${exitIp2}, modo tor se persiste en el perfil, toggle a direct OK`);
 
-// 9. stop + start via MCP
+// 9. interact: Playwright-backed actions (goto/fill/eval round-trip)
+const inter = await call("browser_interact", {
+  profile: "wiki",
+  steps: [
+    { action: "goto", url: "https://httpbin.org/forms/post" },
+    { action: "fill", selector: "input[name=custname]", value: "agente-recon" },
+    { action: "eval", expression: "document.querySelector('input[name=custname]').value" }
+  ],
+  max_chars: 500
+});
+assert.equal(inter.step_results.find((entry) => entry.action === "eval")?.value, "agente-recon");
+assert.match(inter.text ?? "", /customer/i); // capture reflects the interacted page
+console.log("9. browser_interact: goto+fill+eval sobre la pagina real OK");
+
+// 10. stop + start via MCP
 await call("browser_stop_profile", { profile: "x" });
 const stoppedX = await call("browser_profiles");
 const xAfterStop = stoppedX.profiles.find((entry) => entry.name === "x");
@@ -137,7 +151,7 @@ status = await call("browser_status");
 assert.equal(status.running, false);
 const started = await call("browser_start");
 assert.equal(started.health.ok ?? true, true);
-console.log("9. browser_stop_profile + browser_stop + browser_start via MCP OK");
+console.log("10. browser_stop_profile + browser_stop + browser_start via MCP OK");
 
 await client.close();
-console.log("FULL TEST OK — 9/9");
+console.log("FULL TEST OK — 10/10");

@@ -319,6 +319,37 @@ server.registerTool("browser_stop_profile", {
   return jsonContent(await postForm("/profile_stop", { profile }));
 });
 
+server.registerTool("browser_interact", {
+  title: "Interact with the page (Playwright actions)",
+  description:
+    "Run an ordered list of actions in the profile's Chromium against the CURRENT page (start with a goto step to navigate): " +
+    "goto, click, fill, press, select, check, hover, scroll, wait_selector, wait_ms, eval. Selectors are Playwright CSS. " +
+    "eval returns the value in step_results. Ends with a full capture (same shape as browser_scrape: text inline, artifacts, blocked detection). " +
+    "Use it for search boxes, filters, pagination, 'ver más' buttons — anything a plain GET scrape cannot do.",
+  inputSchema: {
+    profile: z.string().optional().describe("Named persistent session (default 'default')"),
+    tor: z.boolean().optional().describe("Route through Tor (see browser_scrape)"),
+    steps: z.array(z.object({
+      action: z.enum(["goto", "click", "fill", "press", "select", "check", "hover", "scroll", "wait_selector", "wait_ms", "eval"]),
+      selector: z.string().optional().describe("CSS selector for click/fill/select/check/hover/wait_selector"),
+      value: z.string().optional().describe("Text for fill, option for select"),
+      key: z.string().optional().describe("Keyboard key for press (default Enter)"),
+      url: z.string().optional().describe("URL for goto"),
+      ms: z.number().int().min(0).max(30000).optional().describe("Milliseconds for wait_ms / timeout for wait_selector"),
+      expression: z.string().optional().describe("JS expression for eval, e.g. \"document.title\"")
+    })).max(25).describe("Ordered actions"),
+    max_chars: z.number().int().min(500).max(50000).optional().describe("Max characters of page.txt to return inline (default 6000)")
+  }
+}, async ({ profile, tor, steps, max_chars }) => {
+  await ensureStarted();
+  const payload = await postForm("/interact", {
+    profile,
+    steps: JSON.stringify(steps),
+    proxy: tor === undefined ? undefined : tor ? "tor" : "direct"
+  });
+  return jsonContent(await enrichScrapeResult(payload, max_chars ?? 6000));
+});
+
 server.registerTool("browser_read", {
   title: "Read capture artifact",
   description:
