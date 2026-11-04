@@ -14,8 +14,10 @@ usage() {
 Usage:
   recon-browser.sh start              # docker compose up -d --build (+ wait healthy)
   recon-browser.sh status
-  recon-browser.sh scrape URL [--selector CSS] [--wait-seconds N]
-  recon-browser.sh capture [--selector CSS]
+  recon-browser.sh scrape URL [--profile NAME] [--selector CSS] [--wait-seconds N]
+  recon-browser.sh capture [--profile NAME] [--selector CSS]
+  recon-browser.sh profiles           # named persistent sessions (disk + running)
+  recon-browser.sh profile-stop NAME  # stop one profile's Chromium (cookies persist)
   recon-browser.sh stop               # docker compose down
   recon-browser.sh logs
 EOF
@@ -60,6 +62,7 @@ case "$command" in
     args=(--data-urlencode "url=$url")
     while [[ $# -gt 0 ]]; do
       case "$1" in
+        --profile) args+=(--data-urlencode "profile=$2"); shift 2 ;;
         --selector) args+=(--data-urlencode "selector=$2"); shift 2 ;;
         --wait-seconds) args+=(--data-urlencode "wait_seconds=$2"); shift 2 ;;
         *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -72,11 +75,21 @@ case "$command" in
     args=()
     while [[ $# -gt 0 ]]; do
       case "$1" in
+        --profile) args+=(--data-urlencode "profile=$2"); shift 2 ;;
         --selector) args+=(--data-urlencode "selector=$2"); shift 2 ;;
         *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
       esac
     done
     request capture "${args[@]}"
+    ;;
+  profiles)
+    curl --silent --show-error --fail "$API/profiles" || echo "(container not reachable)"
+    echo
+    ;;
+  profile-stop)
+    name="${2:-}"; [[ -n "$name" ]] || { usage >&2; exit 2; }
+    curl --silent --show-error --fail-with-body --request POST "$API/profile_stop" --data-urlencode "profile=$name"
+    echo
     ;;
   *) usage >&2; exit 2 ;;
 esac

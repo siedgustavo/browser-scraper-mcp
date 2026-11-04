@@ -15,5 +15,6 @@ services:
       - "127.0.0.1:${RECON_BROWSER_VNC_PORT:-6081}:6080"
     shm_size: "2gb"
     restart: "no"
+    stop_grace_period: 45s
     volumes:
       - "${BROWSER_SCRAPER_STATE:-../.state}:/data"

@@ -22,6 +22,14 @@ const call = async (name, args = {}) => {
   assert.ok(!result.isError, `${name} returned an error: ${result.content?.[0]?.text}`);
   return JSON.parse(result.content[0].text);
 };
+const API = process.env.RECON_BROWSER_API || "http://127.0.0.1:7318";
+const post = async (endpoint, params) => {
+  const body = new URLSearchParams(params);
+  const response = await fetch(`${API}/${endpoint}`, { method: "POST", body });
+  const payload = await response.json().catch(() => ({}));
+  assert.ok(response.ok && !payload.error, `${endpoint} failed: ${payload.error}`);
+  return payload;
+};
 
 // 1. cold state: container must be down
 let status = await call("browser_status");
@@ -73,13 +81,38 @@ const statusUp = await call("browser_status");
 assert.equal(statusUp.running, true);
 console.log("6. browser_status (warm): running=true OK");
 
-// 7. stop + start via MCP
+// 7. profiles: named sessions, isolation, and persistence across a container restart
+await call("browser_scrape", { url: "https://httpbin.org/", profile: "x", wait_seconds: 15, max_chars: 500 });
+await post("test_cookie", { profile: "x", name: "mcp_session", value: "x-keeps-me" }); // persistent cookie via CDP
+const profiles = await call("browser_profiles");
+const xProfile = profiles.profiles.find((entry) => entry.name === "x");
+assert.ok(xProfile?.running, "profile 'x' should be running");
+assert.ok(xProfile.cookie_count >= 1, "profile 'x' should hold the cookie we just set");
+// isolation: a different profile must NOT see the 'x' cookie
+const other = await call("browser_scrape", { url: "https://httpbin.org/cookies", profile: "wiki", wait_seconds: 15, max_chars: 500 });
+assert.ok(!other.text.includes("mcp_session"), "'wiki' profile must not see the 'x' profile cookie");
+// persistence: full container restart, then resume the same session
+await call("browser_stop");
+await call("browser_start");
+const resumed = await call("browser_scrape", { url: "https://httpbin.org/cookies", profile: "x", wait_seconds: 15, max_chars: 500 });
+assert.ok(resumed.text.includes("mcp_session"), "'x' profile must keep its cookie across a container restart");
+assert.ok(resumed.text.includes("x-keeps-me"), "'x' profile must keep the cookie value across a container restart");
+const profilesAfter = await call("browser_profiles");
+assert.ok(profilesAfter.profiles.some((entry) => entry.name === "x" && entry.running));
+console.log("7. profiles: named sessions, isolation between them, cookie survives container restart OK");
+
+// 8. stop + start via MCP
+await call("browser_stop_profile", { profile: "x" });
+const stoppedX = await call("browser_profiles");
+const xAfterStop = stoppedX.profiles.find((entry) => entry.name === "x");
+assert.equal(xAfterStop.running, false);
+assert.equal(xAfterStop.on_disk, true);
 await call("browser_stop");
 status = await call("browser_status");
 assert.equal(status.running, false);
 const started = await call("browser_start");
 assert.equal(started.health.ok ?? true, true);
-console.log("7. browser_stop + browser_start via MCP OK");
+console.log("8. browser_stop_profile + browser_stop + browser_start via MCP OK");
 
 await client.close();
-console.log("FULL TEST OK — 7/7");
+console.log("FULL TEST OK — 8/8");

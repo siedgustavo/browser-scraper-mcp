@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // browser-scraper-mcp: MCP (stdio) front-end for the recon-browser Docker scraper.
-// The Docker container runs a visible Chromium (Xvfb + noVNC) with a persistent
-// profile and an HTTP API. This server lets agents scrape blocked sites and lets
-// them read the captured artifacts directly from the host filesystem.
+// The Docker container runs visible Chromium instances (Xvfb + noVNC), one per
+// named persistent profile, with an HTTP API. This server lets agents scrape
+// blocked sites, keep logins/cookies isolated per named session (profile), and
+// read the captured artifacts directly from the host filesystem.
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -91,6 +92,13 @@ async function ensureStarted() {
     })().finally(() => { startingPromise = null; });
   }
   return { started: true, health: await startingPromise };
+}
+
+async function getJson(endpoint, timeoutMs = 15000) {
+  const response = await fetch(`${API_URL}${endpoint}`, { signal: AbortSignal.timeout(timeoutMs) });
+  const payload = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+  if (!response.ok || payload.error) throw new Error(payload.error || `HTTP ${response.status}`);
+  return payload;
 }
 
 async function postForm(endpoint, params) {
@@ -191,7 +199,7 @@ server.registerTool("browser_status", {
 
 server.registerTool("browser_start", {
   title: "Start browser container",
-  description: "Start (building on first use) the recon-browser Docker container with the persistent Chromium profile. Waits until the scraper API is healthy.",
+  description: "Start (building on first use) the recon-browser Docker container. Chromium instances launch on demand per named profile; profiles and captures persist in the host state directory. Waits until the scraper API is healthy.",
   inputSchema: {}
 }, async () => {
   const outcome = await ensureStarted();
@@ -200,7 +208,7 @@ server.registerTool("browser_start", {
 
 server.registerTool("browser_stop", {
   title: "Stop browser container",
-  description: "Stop and remove the recon-browser Docker container. The browser profile and captures persist in the host state directory.",
+  description: "Stop and remove the recon-browser Docker container. Named browser profiles (cookies/logins) and captures persist in the host state directory.",
   inputSchema: {}
 }, async () => {
   await compose(["-f", path.join(CONTAINER_DIR, "compose.yml"), "down"]);
@@ -212,32 +220,69 @@ server.registerTool("browser_scrape", {
   description:
     "Navigate the persistent Chromium (inside Docker, behind noVNC) to an http(s) URL, wait for JS/challenges to settle, and save artifacts " +
     "(page.html, page.txt, links.json, screenshot.png, metadata.json). Returns page text inline (truncated) plus the host capture directory. " +
+    "Pass a named 'profile' to keep cookies/logins per site or account (e.g. profile='x' for logged-in X sessions); logins done once via noVNC persist across restarts. " +
     "If 'blocked' is true, ask the user to solve the challenge via the vnc_url and then call browser_capture. Starts the container automatically when needed.",
   inputSchema: {
     url: z.string().describe("Absolute http(s) URL to open"),
+    profile: z.string().optional().describe("Named persistent session (cookies/logins isolated per name). Default 'default'"),
     selector: z.string().optional().describe("Optional CSS selector to wait for (client-rendered pages)"),
     wait_seconds: z.number().int().min(1).max(120).optional().describe("Max seconds to wait for settling (default 20)"),
     max_chars: z.number().int().min(500).max(50000).optional().describe("Max characters of page.txt to return inline (default 6000)")
   }
-}, async ({ url, selector, wait_seconds, max_chars }) => {
+}, async ({ url, profile, selector, wait_seconds, max_chars }) => {
   await ensureStarted();
-  const payload = await postForm("/scrape", { url, selector, wait_seconds });
+  const payload = await postForm("/scrape", { url, profile, selector, wait_seconds });
   return jsonContent(await enrichScrapeResult(payload, max_chars ?? 6000));
 });
 
 server.registerTool("browser_capture", {
   title: "Capture current tab",
   description:
-    "Save artifacts from the tab currently open in the shared Chromium without navigating away. Use right after the user finishes a CAPTCHA/challenge in noVNC. " +
+    "Save artifacts from the tab currently open in the given profile's Chromium without navigating away. Use right after the user finishes a CAPTCHA/challenge or a login in noVNC. " +
     "Also useful to re-read a page that is already loaded.",
   inputSchema: {
+    profile: z.string().optional().describe("Named persistent session to capture (default 'default')"),
     selector: z.string().optional().describe("Optional CSS selector to wait for before capturing"),
     max_chars: z.number().int().min(500).max(50000).optional().describe("Max characters of page.txt to return inline (default 6000)")
   }
-}, async ({ selector, max_chars }) => {
+}, async ({ profile, selector, max_chars }) => {
   await ensureStarted();
-  const payload = await postForm("/capture", { selector });
+  const payload = await postForm("/capture", { profile, selector });
   return jsonContent(await enrichScrapeResult(payload, max_chars ?? 6000));
+});
+
+server.registerTool("browser_profiles", {
+  title: "List persistent browser profiles",
+  description:
+    "List named browser sessions (profiles) on disk and running: cookie counts, last use, current tab, and host dir. Use it to discover existing logins " +
+    "before deciding to reuse or create a profile, and after restarts to confirm sessions survived. Works even when the container is stopped (lists on-disk profiles).",
+  inputSchema: {}
+}, async () => {
+  const alive = await health();
+  if (!alive) {
+    const profilesRoot = path.join(STATE_DIR, "profiles");
+    const names = (await fs.readdir(profilesRoot, { withFileTypes: true }).catch(() => []))
+      .filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+    return jsonContent({
+      container_running: false,
+      profiles: names.map((name) => ({ name, running: false, on_disk: true })),
+      note: `Container is down; ${names.length} profile(s) persist under ${profilesRoot} and will be available on next start.`
+    });
+  }
+  const payload = await getJson("/profiles");
+  return jsonContent({ container_running: true, vnc_url: VNC_URL, ...payload });
+});
+
+server.registerTool("browser_stop_profile", {
+  title: "Stop one browser profile",
+  description:
+    "Stop the Chromium instance for one named profile without touching the container or other sessions. Cookies flush to disk; the session persists and can be resumed later.",
+  inputSchema: {
+    profile: z.string().describe("Named persistent session to stop")
+  }
+}, async ({ profile }) => {
+  await ensureStarted();
+  return jsonContent(await postForm("/profile_stop", { profile }));
 });
 
 server.registerTool("browser_read", {
