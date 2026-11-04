@@ -1,14 +1,33 @@
 name: recon-browser-mcp
 
 services:
+  tor:
+    build:
+      context: .
+      dockerfile: tor.Dockerfile
+    container_name: recon-browser-tor
+    environment:
+      TOR_CONTROL_PASSWORD: "${RECON_TOR_CONTROL_PASSWORD:-reconrotator}"
+      TZ: "UTC"
+    shm_size: "256m"
+    restart: "no"
+    volumes:
+      # Persisted descriptors/cached-certs: much faster bootstrap on restarts.
+      - "${BROWSER_SCRAPER_STATE:-../.state}/tor:/var/lib/tor"
   browser:
     build:
       context: .
     container_name: recon-browser-mcp
+    depends_on:
+      - tor
     environment:
       DISPLAY: ":99"
       BROWSER_SCRAPER_HOST_STATE: "${BROWSER_SCRAPER_STATE:-../.state}"
       SCRAPER_PORT: "7317"
+      TOR_PROXY: "${RECON_TOR_PROXY:-socks5://tor:9050}"
+      TOR_CONTROL_HOST: "tor"
+      TOR_CONTROL_PORT: "9051"
+      TOR_CONTROL_PASSWORD: "${RECON_TOR_CONTROL_PASSWORD:-reconrotator}"
       TZ: "UTC"
     ports:
       - "127.0.0.1:${RECON_BROWSER_API_PORT:-7318}:7317"

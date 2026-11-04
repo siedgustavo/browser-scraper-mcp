@@ -187,10 +187,12 @@ server.registerTool("browser_status", {
   const ps = await compose(["-f", path.join(CONTAINER_DIR, "compose.yml"), "ps", "--format", "json"])
     .then(({ stdout }) => stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)))
     .catch(() => []);
+  const tor = alive ? await getJson("/tor_status", 6000).catch(() => null) : null;
   return jsonContent({
     api_url: API_URL,
     running: Boolean(alive),
     health: alive,
+    tor,
     containers: ps.map((entry) => ({ name: entry.Name, service: entry.Service, state: entry.State, status: entry.Status })),
     vnc_url: VNC_URL,
     state_dir: STATE_DIR
@@ -225,13 +227,17 @@ server.registerTool("browser_scrape", {
   inputSchema: {
     url: z.string().describe("Absolute http(s) URL to open"),
     profile: z.string().optional().describe("Named persistent session (cookies/logins isolated per name). Default 'default'"),
+    tor: z.boolean().optional().describe("Route this profile through the bundled Tor proxy (new exit IP after browser_new_identity). Omit to keep the profile's current mode; changing it restarts the profile's Chromium preserving the session"),
     selector: z.string().optional().describe("Optional CSS selector to wait for (client-rendered pages)"),
     wait_seconds: z.number().int().min(1).max(120).optional().describe("Max seconds to wait for settling (default 20)"),
     max_chars: z.number().int().min(500).max(50000).optional().describe("Max characters of page.txt to return inline (default 6000)")
   }
-}, async ({ url, profile, selector, wait_seconds, max_chars }) => {
+}, async ({ url, profile, tor, selector, wait_seconds, max_chars }) => {
   await ensureStarted();
-  const payload = await postForm("/scrape", { url, profile, selector, wait_seconds });
+  const payload = await postForm("/scrape", {
+    url, profile, selector, wait_seconds,
+    proxy: tor === undefined ? undefined : tor ? "tor" : "direct"
+  });
   return jsonContent(await enrichScrapeResult(payload, max_chars ?? 6000));
 });
 
@@ -242,13 +248,40 @@ server.registerTool("browser_capture", {
     "Also useful to re-read a page that is already loaded.",
   inputSchema: {
     profile: z.string().optional().describe("Named persistent session to capture (default 'default')"),
+    tor: z.boolean().optional().describe("Route this profile through Tor (see browser_scrape)"),
     selector: z.string().optional().describe("Optional CSS selector to wait for before capturing"),
     max_chars: z.number().int().min(500).max(50000).optional().describe("Max characters of page.txt to return inline (default 6000)")
   }
-}, async ({ profile, selector, max_chars }) => {
+}, async ({ profile, tor, selector, max_chars }) => {
   await ensureStarted();
-  const payload = await postForm("/capture", { profile, selector });
+  const payload = await postForm("/capture", {
+    profile, selector,
+    proxy: tor === undefined ? undefined : tor ? "tor" : "direct"
+  });
   return jsonContent(await enrichScrapeResult(payload, max_chars ?? 6000));
+});
+
+server.registerTool("browser_tor_status", {
+  title: "Tor proxy status",
+  description:
+    "Check the bundled Tor: bootstrap progress, circuit state and SOCKS proxy URL. Scrape with tor=true once bootstrap reaches 100. " +
+    "Tip: browser_scrape url=https://check.torproject.org/api/ip tor=true verifies the exit path end-to-end.",
+  inputSchema: {}
+}, async () => {
+  await ensureStarted();
+  return jsonContent(await getJson("/tor_status"));
+});
+
+server.registerTool("browser_new_identity", {
+  title: "Rotate Tor identity (NEWNYM)",
+  description:
+    "Ask Tor for a new circuit (SIGNAL NEWNYM): subsequent tor=true requests appear from a different exit IP. Rotates the shared Tor proxy, i.e. all " +
+    "profiles routing through tor get the new identity. Old established circuits may finish their current request on the previous IP.",
+  inputSchema: {}
+}, async () => {
+  await ensureStarted();
+  const result = await postForm("/tor_new_identity", {});
+  return jsonContent({ ...result, verify_with: "browser_scrape url=https://check.torproject.org/api/ip tor=true" });
 });
 
 server.registerTool("browser_profiles", {

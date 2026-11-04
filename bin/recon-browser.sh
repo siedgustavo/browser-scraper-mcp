@@ -14,10 +14,12 @@ usage() {
 Usage:
   recon-browser.sh start              # docker compose up -d --build (+ wait healthy)
   recon-browser.sh status
-  recon-browser.sh scrape URL [--profile NAME] [--selector CSS] [--wait-seconds N]
-  recon-browser.sh capture [--profile NAME] [--selector CSS]
-  recon-browser.sh profiles           # named persistent sessions (disk + running)
+  recon-browser.sh scrape URL [--profile NAME] [--tor|--direct] [--selector CSS] [--wait-seconds N]
+  recon-browser.sh capture [--profile NAME] [--tor|--direct] [--selector CSS]
+  recon-browser.sh profiles           # list persistent browser profiles
   recon-browser.sh profile-stop NAME  # stop one profile's Chromium (cookies persist)
+  recon-browser.sh tor-status         # Tor bootstrap/circuit state
+  recon-browser.sh tor-rotate         # SIGNAL NEWNYM: new exit IP
   recon-browser.sh stop               # docker compose down
   recon-browser.sh logs
 EOF
@@ -63,6 +65,8 @@ case "$command" in
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --profile) args+=(--data-urlencode "profile=$2"); shift 2 ;;
+        --tor) args+=(--data-urlencode "proxy=tor"); shift ;;
+        --direct) args+=(--data-urlencode "proxy=direct"); shift ;;
         --selector) args+=(--data-urlencode "selector=$2"); shift 2 ;;
         --wait-seconds) args+=(--data-urlencode "wait_seconds=$2"); shift 2 ;;
         *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -76,6 +80,8 @@ case "$command" in
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --profile) args+=(--data-urlencode "profile=$2"); shift 2 ;;
+        --tor) args+=(--data-urlencode "proxy=tor"); shift ;;
+        --direct) args+=(--data-urlencode "proxy=direct"); shift ;;
         --selector) args+=(--data-urlencode "selector=$2"); shift 2 ;;
         *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
       esac
@@ -89,6 +95,14 @@ case "$command" in
   profile-stop)
     name="${2:-}"; [[ -n "$name" ]] || { usage >&2; exit 2; }
     curl --silent --show-error --fail-with-body --request POST "$API/profile_stop" --data-urlencode "profile=$name"
+    echo
+    ;;
+  tor-status)
+    curl --silent --show-error --fail "$API/tor_status" || echo "(container not reachable)"
+    echo
+    ;;
+  tor-rotate)
+    curl --silent --show-error --fail-with-body --request POST "$API/tor_new_identity"
     echo
     ;;
   *) usage >&2; exit 2 ;;

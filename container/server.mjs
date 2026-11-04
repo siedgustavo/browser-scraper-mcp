@@ -1,5 +1,6 @@
 import http from "node:http";
 import fs from "node:fs/promises";
+import net from "node:net";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { chromium } from "playwright";
@@ -11,6 +12,11 @@ const chromeBin = process.env.CHROME_BIN || "/ms-playwright/chromium-1187/chrome
 const hostStateRoot = process.env.BROWSER_SCRAPER_HOST_STATE || null;
 const maxActiveProfiles = Math.max(1, Number(process.env.MAX_ACTIVE_PROFILES || 4));
 const challengePattern = /just a moment|enable javascript and cookies|checking your browser|verify you are human|attention required|captcha/i;
+const torProxyUrl = process.env.TOR_PROXY || "socks5://tor:9050";
+const torControlHost = process.env.TOR_CONTROL_HOST || "tor";
+const torControlPort = Number(process.env.TOR_CONTROL_PORT || 9051);
+const torControlPassword = process.env.TOR_CONTROL_PASSWORD || "reconrotator";
+const proxyModeFile = ".browser-proxy-mode";
 
 await fs.mkdir(capturesRoot, { recursive: true });
 await fs.mkdir(profilesRoot, { recursive: true });
@@ -32,6 +38,62 @@ function allocatePort() {
 function profileName(value) {
   const name = String(value || "default").toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
   return name || "default";
+}
+
+// ---------- tor control port (pipelined commands, resolved on QUIT/close) ----------
+
+function torControl(commands, timeoutMs = 20000) {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ host: torControlHost, port: torControlPort });
+    let buffer = "";
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error(`tor control timed out (got: ${buffer.slice(-160) || "nothing"})`));
+    }, timeoutMs);
+    socket.on("error", (error) => { clearTimeout(timer); reject(error); });
+    socket.on("data", (chunk) => {
+      buffer += chunk.toString("latin1");
+      if (/(?:^|\r\n)[45]\d\d[ -]/.test(buffer)) {
+        clearTimeout(timer);
+        socket.destroy();
+        reject(new Error(buffer.trim().split("\r\n").pop() || "tor control error"));
+      }
+    });
+    socket.on("close", () => { clearTimeout(timer); resolve(buffer); });
+    socket.on("connect", () => {
+      socket.write(`AUTHENTICATE "${torControlPassword}"\r\n${commands.map((command) => `${command}\r\n`).join("")}QUIT\r\n`);
+    });
+  });
+}
+
+async function torStatus() {
+  try {
+    const buffer = await torControl(["GETINFO status/bootstrap-phase", "GETINFO status/circuit-established"]);
+    return {
+      proxy: torProxyUrl,
+      reachable: true,
+      bootstrap: buffer.match(/status\/bootstrap-phase=([^\r\n]*)/)?.[1] ?? null,
+      circuit_established: buffer.match(/status\/circuit-established=([^\r\n]*)/)?.[1] === "1"
+    };
+  } catch (error) {
+    return { proxy: torProxyUrl, reachable: false, error: error.message };
+  }
+}
+
+async function torNewIdentity() {
+  await torControl(["SIGNAL NEWNYM"]);
+  return { signal: "NEWNYM", ok: true, proxy: torProxyUrl };
+}
+
+// ---------- profiles ----------
+
+async function readProfileMode(name) {
+  const mode = await fs.readFile(path.join(profilesRoot, name, proxyModeFile), "utf8").catch(() => null);
+  return mode?.trim() === "tor" ? true : mode?.trim() === "direct" ? false : null;
+}
+
+async function writeProfileMode(name, useTor) {
+  await fs.writeFile(path.join(profilesRoot, name, proxyModeFile), useTor ? "tor" : "direct").catch(() => {});
 }
 
 function isRunning(entry) {
@@ -82,7 +144,7 @@ async function evictIfNeeded() {
   await stopProfile(running[0].name);
 }
 
-async function launchProfile(name) {
+async function launchProfile(name, useTor = false) {
   const dir = path.join(profilesRoot, name);
   await fs.mkdir(dir, { recursive: true });
   await Promise.all(["SingletonCookie", "SingletonLock", "SingletonSocket"]
@@ -100,11 +162,13 @@ async function launchProfile(name) {
     `--user-data-dir=${dir}`,
     "--window-size=1400,920",
     `--window-position=${20 + index * 40},${40 + index * 30}`,
+    ...(useTor ? [`--proxy-server=${torProxyUrl}`] : []),
     "about:blank"
   ], { stdio: "ignore" });
 
-  const entry = { name, dir, proc, debugPort, browser: null, lastUsed: Date.now(), requestedUrl: null, queue: Promise.resolve() };
+  const entry = { name, dir, proc, debugPort, browser: null, lastUsed: Date.now(), requestedUrl: null, useTor, queue: Promise.resolve() };
   profiles.set(name, entry);
+  await writeProfileMode(name, useTor);
 
   let lastError;
   for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -129,16 +193,23 @@ async function launchProfile(name) {
   throw new Error(`Chromium for profile '${name}' failed to start: ${lastError?.message}`);
 }
 
-async function ensureProfile(name) {
+// useTor: true/false forces the proxy mode (restarting the profile's Chromium
+// if needed, sessions persist on disk); null keeps the running mode or the
+// mode last persisted on disk.
+async function ensureProfile(name, useTor = null) {
   await pruneExited();
   const existing = profiles.get(name);
+  const desired = useTor ?? (existing && isRunning(existing) ? existing.useTor : await readProfileMode(name)) ?? false;
   if (existing && isRunning(existing)) {
-    existing.lastUsed = Date.now();
-    return existing;
+    if (existing.useTor === desired) {
+      existing.lastUsed = Date.now();
+      return existing;
+    }
+    await stopProfile(name); // switch proxy mode: cookie/localStorage state is preserved
   }
   if (existing) await stopProfile(name);
   await evictIfNeeded();
-  return await launchProfile(name);
+  return await launchProfile(name, desired);
 }
 
 async function resolvePage(entry) {
@@ -172,6 +243,12 @@ function validateUrl(value) {
   return url;
 }
 
+function parseProxyParam(value) {
+  if (value === "tor") return true;
+  if (value === "direct") return false;
+  return null;
+}
+
 async function challengeState(page) {
   const snapshot = await page.evaluate(() => ({
     title: document.title,
@@ -200,11 +277,11 @@ async function waitForPage(page, selector, waitSeconds) {
   return challengeState(page);
 }
 
-async function saveCapture(page, { requestedUrl = null, status = null, selector = null, startedAt, profile }) {
+async function saveCapture(page, { requestedUrl = null, status = null, selector = null, startedAt, profile, proxy = "direct" }) {
   const finalUrl = page.url();
   const parsed = new URL(finalUrl === "about:blank" ? "https://blank.invalid/" : finalUrl);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const captureName = `${stamp}-${safeSegment(parsed.hostname)}-${safeSegment(parsed.pathname)}-${profile}`;
+  const captureName = `${stamp}-${safeSegment(parsed.hostname)}-${safeSegment(parsed.pathname)}-${profile}${proxy === "tor" ? "-tor" : ""}`;
   const captureDir = path.join(capturesRoot, captureName);
   await fs.mkdir(captureDir, { recursive: true });
 
@@ -227,6 +304,7 @@ async function saveCapture(page, { requestedUrl = null, status = null, selector 
 
   const metadata = {
     profile,
+    proxy,
     requested_url: requestedUrl,
     final_url: finalUrl,
     title,
@@ -258,31 +336,33 @@ async function parseBody(request) {
 
 async function scrape(params) {
   const profile = profileName(params.get("profile"));
+  const useTor = parseProxyParam(params.get("proxy"));
   const startedAt = Date.now();
   const target = validateUrl(params.get("url"));
   const selector = params.get("selector") || null;
   const waitSeconds = Math.min(Math.max(Number(params.get("wait_seconds") || 20), 1), 120);
-  const entry = await ensureProfile(profile);
+  const entry = await ensureProfile(profile, useTor);
   const page = await resolvePage(entry);
   const navigation = await page.goto(target.href, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.bringToFront();
   await waitForPage(page, selector, waitSeconds);
   entry.lastUsed = Date.now();
   entry.requestedUrl = target.href;
-  return saveCapture(page, { requestedUrl: target.href, status: navigation?.status() ?? null, selector, startedAt, profile });
+  return saveCapture(page, { requestedUrl: target.href, status: navigation?.status() ?? null, selector, startedAt, profile, proxy: entry.useTor ? "tor" : "direct" });
 }
 
 async function capture(params) {
   const profile = profileName(params.get("profile"));
+  const useTor = parseProxyParam(params.get("proxy"));
   const startedAt = Date.now();
   const selector = params.get("selector") || null;
-  const entry = await ensureProfile(profile);
+  const entry = await ensureProfile(profile, useTor);
   const page = await resolvePage(entry);
   if (selector) {
     await page.waitForFunction((value) => Boolean(document.querySelector(value)), selector, { timeout: 30000 }).catch(() => {});
   }
   entry.lastUsed = Date.now();
-  return saveCapture(page, { requestedUrl: page.url(), selector, startedAt, profile });
+  return saveCapture(page, { requestedUrl: page.url(), selector, startedAt, profile, proxy: entry.useTor ? "tor" : "direct" });
 }
 
 async function listProfiles() {
@@ -300,10 +380,13 @@ async function listProfiles() {
       cookieCount = (await context.cookies().catch(() => []))?.length ?? null;
       pageUrl = entry.requestedUrl;
     }
+    const savedMode = running ? null : await readProfileMode(name);
     return {
       name,
       running,
       on_disk: diskNames.includes(name),
+      proxy: running ? (entry.useTor ? "tor" : "direct") : null,
+      saved_proxy_mode: savedMode === null ? null : savedMode ? "tor" : "direct",
       cookie_count: cookieCount,
       page_url: pageUrl,
       last_used: entry ? new Date(entry.lastUsed).toISOString() : null,
@@ -322,11 +405,17 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/profiles") {
       return jsonResponse(response, 200, { profiles: await listProfiles(), max_active_profiles: maxActiveProfiles });
     }
-    if (request.method !== "POST" || !["/scrape", "/capture", "/profile_stop", "/test_cookie"].includes(request.url)) {
+    if (request.method === "GET" && request.url === "/tor_status") {
+      return jsonResponse(response, 200, await torStatus());
+    }
+    if (request.method !== "POST" || !["/scrape", "/capture", "/profile_stop", "/test_cookie", "/tor_new_identity"].includes(request.url)) {
       return jsonResponse(response, 404, { error: "Not found" });
     }
 
     const params = await parseBody(request);
+    if (request.url === "/tor_new_identity") {
+      return jsonResponse(response, 200, await enqueue(torNewIdentity));
+    }
     if (request.url === "/profile_stop") {
       const name = profileName(params.get("profile"));
       const stopped = await stopProfile(name);

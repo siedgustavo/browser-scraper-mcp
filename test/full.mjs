@@ -101,7 +101,32 @@ const profilesAfter = await call("browser_profiles");
 assert.ok(profilesAfter.profiles.some((entry) => entry.name === "x" && entry.running));
 console.log("7. profiles: named sessions, isolation between them, cookie survives container restart OK");
 
-// 8. stop + start via MCP
+// 8. tor: bootstrap, real exit through Tor, identity rotation, mode toggle back to direct
+let torReady = false;
+for (let attempt = 0; attempt < 45 && !torReady; attempt += 1) {
+  const torInfo = await call("browser_tor_status");
+  const pct = /PROGRESS=(\d+)/.exec(torInfo.bootstrap || "")?.[1];
+  torReady = Boolean(torInfo.reachable) && pct === "100";
+  if (!torReady) await new Promise((resolve) => setTimeout(resolve, 2000));
+}
+assert.ok(torReady, "Tor should reach bootstrap 100 within 90s");
+const viaTor = await call("browser_scrape", { url: "https://check.torproject.org/api/ip", profile: "tortest", tor: true, wait_seconds: 60, max_chars: 600 });
+assert.equal(viaTor.proxy, "tor");
+assert.match(viaTor.text ?? "", /"IsTor"\s*:\s*true/i); // Tor exit confirmed by the site itself
+const exitIp1 = viaTor.text.match(/\d+\.\d+\.\d+\.\d+/)?.[0];
+await call("browser_new_identity");
+await new Promise((resolve) => setTimeout(resolve, 1500));
+const viaTor2 = await call("browser_scrape", { url: "https://check.torproject.org/api/ip?r=2", profile: "tortest", wait_seconds: 60, max_chars: 600 });
+assert.match(viaTor2.text ?? "", /"IsTor"\s*:\s*true/i); // tor=true mode must persist on the profile without re-passing it
+const exitIp2 = viaTor2.text.match(/\d+\.\d+\.\d+\.\d+/)?.[0];
+const backDirect = await call("browser_scrape", { url: "https://example.com", profile: "tortest", tor: false, wait_seconds: 15, max_chars: 500 });
+assert.equal(backDirect.proxy, "direct");
+assert.match(backDirect.text ?? "", /domain/i);
+const profilesWithTor = await call("browser_profiles");
+assert.equal(profilesWithTor.profiles.find((entry) => entry.name === "tortest")?.proxy, "direct");
+console.log(`8. tor: bootstrap OK, exit=${exitIp1} tras NEWNYM exit=${exitIp2}, modo tor se persiste en el perfil, toggle a direct OK`);
+
+// 9. stop + start via MCP
 await call("browser_stop_profile", { profile: "x" });
 const stoppedX = await call("browser_profiles");
 const xAfterStop = stoppedX.profiles.find((entry) => entry.name === "x");
@@ -112,7 +137,7 @@ status = await call("browser_status");
 assert.equal(status.running, false);
 const started = await call("browser_start");
 assert.equal(started.health.ok ?? true, true);
-console.log("8. browser_stop_profile + browser_stop + browser_start via MCP OK");
+console.log("9. browser_stop_profile + browser_stop + browser_start via MCP OK");
 
 await client.close();
-console.log("FULL TEST OK — 8/8");
+console.log("FULL TEST OK — 9/9");
