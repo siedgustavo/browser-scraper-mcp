@@ -1,0 +1,19 @@
+name: recon-browser-mcp
+
+services:
+  browser:
+    build:
+      context: .
+    container_name: recon-browser-mcp
+    environment:
+      DISPLAY: ":99"
+      BROWSER_SCRAPER_HOST_STATE: "${BROWSER_SCRAPER_STATE:-../.state}"
+      SCRAPER_PORT: "7317"
+      TZ: "UTC"
+    ports:
+      - "127.0.0.1:${RECON_BROWSER_API_PORT:-7318}:7317"
+      - "127.0.0.1:${RECON_BROWSER_VNC_PORT:-6081}:6080"
+    shm_size: "2gb"
+    restart: "no"
+    volumes:
+      - "${BROWSER_SCRAPER_STATE:-../.state}:/data"

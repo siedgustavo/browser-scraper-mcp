@@ -1,0 +1,18 @@
+{
+  "name": "browser-scraper-mcp",
+  "version": "1.0.0",
+  "description": "MCP server exposing the recon-browser Docker scraper (Chromium + noVNC) so agents can browse sites that block plain HTTP clients",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "browser-scraper-mcp": "./server.mjs"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node test/smoke.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "zod": "^3.25.0"
+  }
+}

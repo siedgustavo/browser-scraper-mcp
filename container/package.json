@@ -1,0 +1,9 @@
+{
+  "name": "recon-browser-scraper",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "playwright": "1.55.0"
+  }
+}
