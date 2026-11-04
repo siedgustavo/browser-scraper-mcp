@@ -340,15 +340,25 @@ async function scrape(params) {
   const startedAt = Date.now();
   const target = validateUrl(params.get("url"));
   const selector = params.get("selector") || null;
+  const clickSelector = params.get("click") || null;
   const waitSeconds = Math.min(Math.max(Number(params.get("wait_seconds") || 20), 1), 120);
   const entry = await ensureProfile(profile, useTor);
   const page = await resolvePage(entry);
   const navigation = await page.goto(target.href, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.bringToFront();
-  await waitForPage(page, selector, waitSeconds);
+  await waitForPage(page, selector, clickSelector ? 8 : waitSeconds);
+  let clicked = null;
+  if (clickSelector && await page.evaluate((value) => Boolean(document.querySelector(value)), clickSelector).catch(() => false)) {
+    await page.click(clickSelector, { timeout: 8000 }).catch(() => {});
+    clicked = clickSelector;
+    await page.waitForLoadState("domcontentloaded", { timeout: 30000 }).catch(() => {});
+    await waitForPage(page, selector, waitSeconds);
+  }
   entry.lastUsed = Date.now();
   entry.requestedUrl = target.href;
-  return saveCapture(page, { requestedUrl: target.href, status: navigation?.status() ?? null, selector, startedAt, profile, proxy: entry.useTor ? "tor" : "direct" });
+  const result = await saveCapture(page, { requestedUrl: target.href, status: navigation?.status() ?? null, selector, startedAt, profile, proxy: entry.useTor ? "tor" : "direct" });
+  if (clicked) result.clicked = clicked;
+  return result;
 }
 
 async function capture(params) {

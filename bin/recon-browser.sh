@@ -67,6 +67,7 @@ case "$command" in
         --profile) args+=(--data-urlencode "profile=$2"); shift 2 ;;
         --tor) args+=(--data-urlencode "proxy=tor"); shift ;;
         --direct) args+=(--data-urlencode "proxy=direct"); shift ;;
+        --click) args+=(--data-urlencode "click=$2"); shift 2 ;;
         --selector) args+=(--data-urlencode "selector=$2"); shift 2 ;;
         --wait-seconds) args+=(--data-urlencode "wait_seconds=$2"); shift 2 ;;
         *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;

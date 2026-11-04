@@ -228,14 +228,15 @@ server.registerTool("browser_scrape", {
     url: z.string().describe("Absolute http(s) URL to open"),
     profile: z.string().optional().describe("Named persistent session (cookies/logins isolated per name). Default 'default'"),
     tor: z.boolean().optional().describe("Route this profile through the bundled Tor proxy (new exit IP after browser_new_identity). Omit to keep the profile's current mode; changing it restarts the profile's Chromium preserving the session"),
+    click: z.string().optional().describe("Optional CSS selector to click after load (e.g. a soft 'Continuar' challenge button); then re-waits and captures the result"),
     selector: z.string().optional().describe("Optional CSS selector to wait for (client-rendered pages)"),
     wait_seconds: z.number().int().min(1).max(120).optional().describe("Max seconds to wait for settling (default 20)"),
     max_chars: z.number().int().min(500).max(50000).optional().describe("Max characters of page.txt to return inline (default 6000)")
   }
-}, async ({ url, profile, tor, selector, wait_seconds, max_chars }) => {
+}, async ({ url, profile, tor, click, selector, wait_seconds, max_chars }) => {
   await ensureStarted();
   const payload = await postForm("/scrape", {
-    url, profile, selector, wait_seconds,
+    url, profile, selector, wait_seconds, click,
     proxy: tor === undefined ? undefined : tor ? "tor" : "direct"
   });
   return jsonContent(await enrichScrapeResult(payload, max_chars ?? 6000));
