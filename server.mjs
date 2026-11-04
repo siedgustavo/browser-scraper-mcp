@@ -27,9 +27,9 @@ function log(message) {
   process.stderr.write(`[browser-scraper-mcp] ${message}\n`);
 }
 
-function run(command, args, { cwd = CONTAINER_DIR, timeoutMs = 0 } = {}) {
+function run(command, args, { cwd = CONTAINER_DIR, timeoutMs = 0, env = process.env } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"], env });
     let stdout = "";
     let stderr = "";
     let timer = null;
@@ -50,7 +50,12 @@ function run(command, args, { cwd = CONTAINER_DIR, timeoutMs = 0 } = {}) {
   });
 }
 
-const compose = (args, options) => run("docker", ["compose", "--project-directory", CONTAINER_DIR, ...args], options);
+const compose = (args, options) =>
+  run("docker", ["compose", "--project-directory", CONTAINER_DIR, ...args], {
+    ...options,
+    // Force the absolute state dir so in-container host_capture_dir paths resolve on the host.
+    env: { ...process.env, BROWSER_SCRAPER_STATE: STATE_DIR }
+  });
 
 async function health(timeoutMs = 3000) {
   try {
@@ -107,10 +112,9 @@ async function postForm(endpoint, params) {
 // Capture dirs are reported from inside the container (/data/captures/...).
 // Map them back to the host state directory so the agent can read artifacts.
 function toHostPath(captureDir, hostCaptureDir) {
-  if (hostCaptureDir) return hostCaptureDir;
-  if (!captureDir) return null;
-  const name = path.basename(captureDir);
-  return path.join(STATE_DIR, "captures", name);
+  if (hostCaptureDir && path.isAbsolute(hostCaptureDir)) return hostCaptureDir;
+  const name = path.basename(hostCaptureDir || captureDir || "");
+  return name ? path.join(STATE_DIR, "captures", name) : null;
 }
 
 async function readText(filePath, maxChars, offset = 0) {
