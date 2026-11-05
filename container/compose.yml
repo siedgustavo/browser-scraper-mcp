@@ -3,8 +3,8 @@ name: recon-browser-mcp
 services:
   tor:
     build:
-      context: .
-      dockerfile: tor.Dockerfile
+      context: ..
+      dockerfile: container/tor.Dockerfile
     container_name: recon-browser-tor
     environment:
       TOR_CONTROL_PASSWORD: "${RECON_TOR_CONTROL_PASSWORD:-reconrotator}"
@@ -16,7 +16,8 @@ services:
       - "${BROWSER_SCRAPER_STATE:-../.state}/tor:/var/lib/tor"
   browser:
     build:
-      context: .
+      context: ..
+      dockerfile: container/Dockerfile
     container_name: recon-browser-mcp
     depends_on:
       - tor

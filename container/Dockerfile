@@ -8,10 +8,13 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY package.json ./
+# Build context is the repo root: the MCP front-end (root server.mjs) is baked
+# in as /app/mcp-server.mjs so Kubernetes can run it from this same image.
+COPY container/package.json ./
 RUN npm install --omit=dev
 
-COPY server.mjs entrypoint.sh ./
+COPY container/server.mjs container/entrypoint.sh ./
+COPY server.mjs /app/mcp-server.mjs
 RUN chmod +x /app/entrypoint.sh
 
 ENV DISPLAY=:99 \

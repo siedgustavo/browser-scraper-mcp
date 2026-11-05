@@ -1,0 +1,6 @@
+.git
+.github
+.state
+node_modules
+test
+*.md

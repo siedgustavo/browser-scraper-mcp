@@ -4,6 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "playwright": "1.55.0"
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "playwright": "1.55.0",
+    "zod": "^3.25.0"
   }
 }
