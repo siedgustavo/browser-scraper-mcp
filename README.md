@@ -61,6 +61,21 @@ browser_interact { profile: "merca", steps: [
 (useful to read state or extract data). All actions run in the profile's own
 Chromium, so they use its session (and Tor mode when enabled).
 
+### X/Twitter without a login
+
+`x.com/search` and `/explore` force a login wall, but profile timelines are
+readable via the public syndication endpoint — no browser, no wall:
+
+```
+curl https://syndication.twitter.com/srv/timeline-profile/screen-name/notnotzecoxao
+```
+
+The replies are Next.js: tweets live in the `__NEXT_DATA__` JSON blob
+(`props.pageProps.timeline.entries[].content.tweet`, ~100 posts per account,
+not strictly newest-first). Live search still wants a logged-in session —
+log in once via noVNC (`test/x-login-retry.py` shows a CDP-driven retry loop
+for when X rate-limits the login itself).
+
 ## Sessions (profiles)
 
 Every scraping tool takes `profile` (default `"default"`). A profile is a real
