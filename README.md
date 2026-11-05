@@ -171,6 +171,9 @@ claude mcp add recon-browser -- node /home/gustavo/repos/reconlab/browser-scrape
 | `RECON_BROWSER_STATE` | `./.state` | Host dir for profile + captures |
 | `RECON_BROWSER_API_PORT` / `RECON_BROWSER_VNC_PORT` | `7318` / `6081` | Host port bindings (set both here and in `*_API`/`*_VNC` when changing) |
 | `RECON_BROWSER_START_TIMEOUT` | `300000` | ms to wait for build + healthy |
+| `VNC_PASSWORD` | *(unset)* | (in-container) when set, x11vnc requires this RFB login; unset = `-nopw` (fine when the port is bound to 127.0.0.1) |
+| `RECON_BROWSER_MCP_HTTP_PORT` | *(unset)* | When set, serve MCP over Streamable HTTP on this port (`POST/GET/DELETE /mcp`, `GET /health`) instead of stdio |
+| `RECON_BROWSER_MANAGED` | `docker` | `remote` = container is platform-managed (K8s): no docker compose calls, `ensureStarted` only waits for `/health` |
 | `RECON_TOR_PROXY` | `socks5://tor:9050` | SOCKS proxy Chromium uses for tor=true (must be `socks5://` — Chromium has no `socks5h` scheme; it resolves via the proxy anyway) |
 | `RECON_TOR_CONTROL_PASSWORD` | `reconrotator` | Tor control port password (NEWNYM auth) |
 | `MAX_ACTIVE_PROFILES` | `4` | (in-container) concurrent Chromium sessions before LRU eviction |
@@ -182,14 +185,46 @@ both can run side by side.
 
 ```
 browser-scraper-mcp/
-├── server.mjs            # MCP stdio server (the only thing agents launch)
+├── server.mjs            # MCP server (stdio by default; HTTP with RECON_BROWSER_MCP_HTTP_PORT)
 ├── bin/recon-browser.sh  # human CLI: start|status|scrape|capture|stop|logs
 ├── container/            # the Docker images + in-container HTTP API
 │   └── compose.yml  Dockerfile  entrypoint.sh  server.mjs  package.json
 │       tor.Dockerfile  tor-entrypoint.sh   # minimal Tor (SOCKS + control port)
-├── test/{smoke,full}.mjs # MCP client tests (npm test): 1 + 9 checks
+├── test/{smoke,http,full}.mjs # MCP client tests (npm test)
 └── .state/               # runtime: profiles, tor state, captures (gitignored)
 ```
+
+## Serving MCP over HTTP (shared / remote instance)
+
+Instead of one stdio process per agent, one instance can serve many agents over
+Streamable HTTP: set `RECON_BROWSER_MCP_HTTP_PORT` (serves `POST/GET/DELETE
+/mcp` + `GET /health`, one session per client) and run it next to the container
+— same machine, or a pod sharing the state volume — with
+`RECON_BROWSER_MANAGED=remote` so the MCP process never touches docker compose
+and just trusts the platform to keep the API healthy. Put a reverse proxy with
+authentication in front: the browser keeps logged-in profiles, and whoever can
+drive the MCP (or noVNC) can drive those sessions.
+
+Any Streamable-HTTP MCP client attaches with:
+
+```json
+{
+  "mcp": {
+    "browser": {
+      "type": "remote",
+      "url": "https://<mcp-host>/mcp",
+      "enabled": true,
+      "headers": { "Authorization": "Basic <base64 user:pass>" }
+    }
+  }
+}
+```
+
+Images: `ghcr.io/<user>/tools/browser-scraper-mcp:{browser,tor}-<version>`,
+built from this repo with `docker buildx --platform linux/amd64` (the browser
+image also ships `/app/mcp-server.mjs`, this file, for the MCP process).
+Our cluster instance — real hostnames, URLs and auth users — is documented in
+the private infra repo (`apps/browser-scraper/`).
 
 ## Etiquette
 
