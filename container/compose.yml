@@ -1,13 +1,13 @@
-name: recon-browser-mcp
+name: browser-scraper-mcp
 
 services:
   tor:
     build:
       context: ..
       dockerfile: container/tor.Dockerfile
-    container_name: recon-browser-tor
+    container_name: browser-scraper-tor
     environment:
-      TOR_CONTROL_PASSWORD: "${RECON_TOR_CONTROL_PASSWORD:-reconrotator}"
+      TOR_CONTROL_PASSWORD: "${TOR_CONTROL_PASSWORD:-browserrotator}"
       TZ: "UTC"
     shm_size: "256m"
     restart: "no"
@@ -18,21 +18,21 @@ services:
     build:
       context: ..
       dockerfile: container/Dockerfile
-    container_name: recon-browser-mcp
+    container_name: browser-scraper-mcp
     depends_on:
       - tor
     environment:
       DISPLAY: ":99"
       BROWSER_SCRAPER_HOST_STATE: "${BROWSER_SCRAPER_STATE:-../.state}"
       SCRAPER_PORT: "7317"
-      TOR_PROXY: "${RECON_TOR_PROXY:-socks5://tor:9050}"
+      TOR_PROXY: "${TOR_PROXY:-socks5://tor:9050}"
       TOR_CONTROL_HOST: "tor"
       TOR_CONTROL_PORT: "9051"
-      TOR_CONTROL_PASSWORD: "${RECON_TOR_CONTROL_PASSWORD:-reconrotator}"
+      TOR_CONTROL_PASSWORD: "${TOR_CONTROL_PASSWORD:-browserrotator}"
       TZ: "UTC"
     ports:
-      - "127.0.0.1:${RECON_BROWSER_API_PORT:-7318}:7317"
-      - "127.0.0.1:${RECON_BROWSER_VNC_PORT:-6081}:6080"
+      - "127.0.0.1:${BROWSER_MCP_API_PORT:-7318}:7317"
+      - "127.0.0.1:${BROWSER_MCP_VNC_PORT:-6081}:6080"
     shm_size: "2gb"
     restart: "no"
     stop_grace_period: 45s

@@ -22,7 +22,7 @@ const call = async (name, args = {}) => {
   assert.ok(!result.isError, `${name} returned an error: ${result.content?.[0]?.text}`);
   return JSON.parse(result.content[0].text);
 };
-const API = process.env.RECON_BROWSER_API || "http://127.0.0.1:7318";
+const API = process.env.BROWSER_MCP_API || "http://127.0.0.1:7318";
 const post = async (endpoint, params) => {
   const body = new URLSearchParams(params);
   const response = await fetch(`${API}/${endpoint}`, { method: "POST", body });
@@ -131,12 +131,12 @@ const inter = await call("browser_interact", {
   profile: "wiki",
   steps: [
     { action: "goto", url: "https://httpbin.org/forms/post" },
-    { action: "fill", selector: "input[name=custname]", value: "agente-recon" },
+    { action: "fill", selector: "input[name=custname]", value: "agente-browser" },
     { action: "eval", expression: "document.querySelector('input[name=custname]').value" }
   ],
   max_chars: 500
 });
-assert.equal(inter.step_results.find((entry) => entry.action === "eval")?.value, "agente-recon");
+assert.equal(inter.step_results.find((entry) => entry.action === "eval")?.value, "agente-browser");
 assert.match(inter.text ?? "", /customer/i); // capture reflects the interacted page
 console.log("9. browser_interact: goto+fill+eval sobre la pagina real OK");
 

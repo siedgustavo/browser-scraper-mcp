@@ -15,7 +15,7 @@ const challengePattern = /just a moment|enable javascript and cookies|checking y
 const torProxyUrl = process.env.TOR_PROXY || "socks5://tor:9050";
 const torControlHost = process.env.TOR_CONTROL_HOST || "tor";
 const torControlPort = Number(process.env.TOR_CONTROL_PORT || 9051);
-const torControlPassword = process.env.TOR_CONTROL_PASSWORD || "reconrotator";
+const torControlPassword = process.env.TOR_CONTROL_PASSWORD || "browserrotator";
 const proxyModeFile = ".browser-proxy-mode";
 
 await fs.mkdir(capturesRoot, { recursive: true });

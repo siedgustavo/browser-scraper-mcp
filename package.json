@@ -1,7 +1,7 @@
 {
   "name": "browser-scraper-mcp",
   "version": "1.0.0",
-  "description": "MCP server exposing the recon-browser Docker scraper (Chromium + noVNC) so agents can browse sites that block plain HTTP clients",
+  "description": "MCP server exposing the browser-scraper Docker scraper (Chromium + noVNC) so agents can browse sites that block plain HTTP clients",
   "type": "module",
   "private": true,
   "bin": {

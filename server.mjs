@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// browser-scraper-mcp: MCP front-end for the recon-browser Docker scraper.
+// browser-scraper-mcp: MCP front-end for the browser-scraper Docker scraper.
 // The Docker container runs visible Chromium instances (Xvfb + noVNC), one per
 // named persistent profile, with an HTTP API. This server lets agents scrape
 // blocked sites, keep logins/cookies isolated per named session (profile), and
 // read the captured artifacts directly from the host filesystem.
 //
 // Transports: stdio (default, what agents launch locally) or Streamable HTTP
-// (set RECON_BROWSER_MCP_HTTP_PORT; serves POST/GET/DELETE /mcp + GET /health).
-// Set RECON_BROWSER_MANAGED=remote when the container is managed externally
+// (set BROWSER_MCP_HTTP_PORT; serves POST/GET/DELETE /mcp + GET /health).
+// Set BROWSER_MCP_MANAGED=remote when the container is managed externally
 // (e.g. Kubernetes): no docker compose calls, just health checks against the API.
 
 import fs from "node:fs/promises";
@@ -22,16 +22,16 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const CONTAINER_DIR = process.env.RECON_BROWSER_DIR || path.join(ROOT, "container");
-const STATE_DIR = process.env.RECON_BROWSER_STATE || path.join(ROOT, ".state");
-const API_URL = (process.env.RECON_BROWSER_API || "http://127.0.0.1:7318").replace(/\/$/, "");
-const VNC_URL = process.env.RECON_BROWSER_VNC || "http://127.0.0.1:6081/vnc.html?autoconnect=true";
-const START_TIMEOUT_MS = Number(process.env.RECON_BROWSER_START_TIMEOUT || 300000);
+const CONTAINER_DIR = process.env.BROWSER_MCP_DIR || path.join(ROOT, "container");
+const STATE_DIR = process.env.BROWSER_MCP_STATE || path.join(ROOT, ".state");
+const API_URL = (process.env.BROWSER_MCP_API || "http://127.0.0.1:7318").replace(/\/$/, "");
+const VNC_URL = process.env.BROWSER_MCP_VNC || "http://127.0.0.1:6081/vnc.html?autoconnect=true";
+const START_TIMEOUT_MS = Number(process.env.BROWSER_MCP_START_TIMEOUT || 300000);
 // "docker" (default): this process starts/stops the container via compose.
 // "remote": the platform (Kubernetes) owns the container; we only probe /health.
-const MANAGED = (process.env.RECON_BROWSER_MANAGED || "docker").trim().toLowerCase();
+const MANAGED = (process.env.BROWSER_MCP_MANAGED || "docker").trim().toLowerCase();
 // When set, serve MCP over Streamable HTTP on this port instead of stdio.
-const MCP_HTTP_PORT = process.env.RECON_BROWSER_MCP_HTTP_PORT ? Number(process.env.RECON_BROWSER_MCP_HTTP_PORT) : null;
+const MCP_HTTP_PORT = process.env.BROWSER_MCP_HTTP_PORT ? Number(process.env.BROWSER_MCP_HTTP_PORT) : null;
 
 const ARTIFACT_FILES = ["page.txt", "page.html", "links.json", "metadata.json", "screenshot.png"];
 
@@ -196,11 +196,11 @@ function jsonContent(value) {
 // One McpServer per session: stdio uses a single instance; HTTP creates a new
 // one on every initialize so several agents can share the same scraper API.
 function buildServer() {
-  const server = new McpServer({ name: "recon-browser", version: "1.0.0" });
+  const server = new McpServer({ name: "browser", version: "1.0.0" });
   
   server.registerTool("browser_status", {
     title: "Browser status",
-    description: "Check whether the recon-browser Docker container and its scraper API are running.",
+    description: "Check whether the browser-scraper Docker container and its scraper API are running.",
     inputSchema: {}
   }, async () => {
     const alive = await health();
@@ -222,7 +222,7 @@ function buildServer() {
   
   server.registerTool("browser_start", {
     title: "Start browser container",
-    description: "Start (building on first use) the recon-browser Docker container. Chromium instances launch on demand per named profile; profiles and captures persist in the host state directory. Waits until the scraper API is healthy.",
+    description: "Start (building on first use) the browser-scraper Docker container. Chromium instances launch on demand per named profile; profiles and captures persist in the host state directory. Waits until the scraper API is healthy.",
     inputSchema: {}
   }, async () => {
     const outcome = await ensureStarted();
@@ -231,11 +231,11 @@ function buildServer() {
   
   server.registerTool("browser_stop", {
     title: "Stop browser container",
-    description: "Stop and remove the recon-browser Docker container. Named browser profiles (cookies/logins) and captures persist in the host state directory.",
+    description: "Stop and remove the browser-scraper Docker container. Named browser profiles (cookies/logins) and captures persist in the host state directory.",
     inputSchema: {}
   }, async () => {
     if (MANAGED === "remote") {
-      return jsonContent({ stopped: false, note: `API ${API_URL} is platform-managed (RECON_BROWSER_MANAGED=remote); scale the workload down to stop it.`, state_dir: STATE_DIR });
+      return jsonContent({ stopped: false, note: `API ${API_URL} is platform-managed (BROWSER_MCP_MANAGED=remote); scale the workload down to stop it.`, state_dir: STATE_DIR });
     }
     await compose(["-f", path.join(CONTAINER_DIR, "compose.yml"), "down"]);
     return jsonContent({ stopped: true, api_url: API_URL, state_dir: STATE_DIR });

@@ -1,5 +1,5 @@
 {
-  "name": "recon-browser-scraper",
+  "name": "browser-scraper",
   "private": true,
   "version": "1.0.0",
   "type": "module",

@@ -1,4 +1,4 @@
-// Smoke test for the Streamable HTTP transport (RECON_BROWSER_MCP_HTTP_PORT).
+// Smoke test for the Streamable HTTP transport (BROWSER_MCP_HTTP_PORT).
 // Does not need the scraper container: only initialize + tools/list run here.
 import { spawn } from "node:child_process";
 import path from "node:path";
@@ -9,7 +9,7 @@ const PORT = 7399;
 const BASE = `http://127.0.0.1:${PORT}`;
 
 const child = spawn("node", [path.join(ROOT, "server.mjs")], {
-  env: { ...process.env, RECON_BROWSER_MCP_HTTP_PORT: String(PORT), RECON_BROWSER_MANAGED: "remote" },
+  env: { ...process.env, BROWSER_MCP_HTTP_PORT: String(PORT), BROWSER_MCP_MANAGED: "remote" },
   stdio: ["ignore", "ignore", "inherit"]
 });
 
@@ -66,7 +66,7 @@ try {
   const sessionId = initResponse.headers.get("mcp-session-id");
   if (!sessionId) throw new Error("initialize did not return an mcp-session-id header");
   const init = parsePayload(await initResponse.text());
-  if (init.result?.serverInfo?.name !== "recon-browser") {
+  if (init.result?.serverInfo?.name !== "browser") {
     throw new Error(`unexpected initialize payload: ${JSON.stringify(init)}`);
   }
 

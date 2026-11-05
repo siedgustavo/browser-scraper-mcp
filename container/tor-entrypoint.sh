@@ -3,7 +3,7 @@
 # control port (for NEWNYM identity rotation from the scraper server).
 set -euo pipefail
 
-PASSWORD="${TOR_CONTROL_PASSWORD:-reconrotator}"
+PASSWORD="${TOR_CONTROL_PASSWORD:-browserrotator}"
 HASHED="$(tor --hash-password "$PASSWORD" | tail -n 1)"
 
 # Keep bash as init and run tor as a child so the stop signal is forwarded and

@@ -1,28 +1,28 @@
 #!/usr/bin/env bash
-# CLI helper for the recon-browser-mcp Docker container (mirrors the MCP tools).
+# CLI helper for the browser-scraper-mcp Docker container (mirrors the MCP tools).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONTAINER_DIR="$ROOT/container"
 export BROWSER_SCRAPER_STATE="${BROWSER_SCRAPER_STATE:-$ROOT/.state}"
-API="${RECON_BROWSER_API:-http://127.0.0.1:7318}"
-VNC="${RECON_BROWSER_VNC:-http://127.0.0.1:6081/vnc.html?autoconnect=true}"
+API="${BROWSER_MCP_API:-http://127.0.0.1:7318}"
+VNC="${BROWSER_MCP_VNC:-http://127.0.0.1:6081/vnc.html?autoconnect=true}"
 COMPOSE=(docker compose --project-directory "$CONTAINER_DIR" -f "$CONTAINER_DIR/compose.yml")
 
 usage() {
   cat <<'EOF'
 Usage:
-  recon-browser.sh start              # docker compose up -d --build (+ wait healthy)
-  recon-browser.sh status
-  recon-browser.sh scrape URL [--profile NAME] [--tor|--direct] [--selector CSS] [--wait-seconds N]
-  recon-browser.sh capture [--profile NAME] [--tor|--direct] [--selector CSS]
-  recon-browser.sh profiles           # list persistent browser profiles
-  recon-browser.sh profile-stop NAME  # stop one profile's Chromium (cookies persist)
-  recon-browser.sh interact '<steps-json>' [--profile NAME] [--tor|--direct]
-  recon-browser.sh tor-status         # Tor bootstrap/circuit state
-  recon-browser.sh tor-rotate         # SIGNAL NEWNYM: new exit IP
-  recon-browser.sh stop               # docker compose down
-  recon-browser.sh logs
+  browser-scraper.sh start              # docker compose up -d --build (+ wait healthy)
+  browser-scraper.sh status
+  browser-scraper.sh scrape URL [--profile NAME] [--tor|--direct] [--selector CSS] [--wait-seconds N]
+  browser-scraper.sh capture [--profile NAME] [--tor|--direct] [--selector CSS]
+  browser-scraper.sh profiles           # list persistent browser profiles
+  browser-scraper.sh profile-stop NAME  # stop one profile's Chromium (cookies persist)
+  browser-scraper.sh interact '<steps-json>' [--profile NAME] [--tor|--direct]
+  browser-scraper.sh tor-status         # Tor bootstrap/circuit state
+  browser-scraper.sh tor-rotate         # SIGNAL NEWNYM: new exit IP
+  browser-scraper.sh stop               # docker compose down
+  browser-scraper.sh logs
 EOF
 }
 
