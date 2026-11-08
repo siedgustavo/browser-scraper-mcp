@@ -231,3 +231,5 @@ the private infra repo (`apps/browser-scraper/`).
 Not a CAPTCHA-solver: if a site demands user interaction, a human finishes it
 through noVNC. Keep request rates low — this is targeted research, not a
 crawler. Respect authentication, rate limits, and site terms.
+
+[![M8ven Verified](https://m8ven.ai/badge/mcp/siedgustavo-browser-scraper-mcp-wrj7tf?variant=verified&v=c6f76cda1654d42bcd09095b3c0fbfae)](https://m8ven.ai/mcp/siedgustavo-browser-scraper-mcp-wrj7tf?s=readme)
