@@ -19,7 +19,7 @@ console.log("browser_status.running:", statusJson.running);
 
 const scrape = await client.callTool({
   name: "browser_scrape",
-  arguments: { url: "https://example.com", wait_seconds: 10, max_chars: 1200 }
+  arguments: { url: "https://example.org", wait_seconds: 10, max_chars: 1200 }
 });
 const scrapeJson = JSON.parse(scrape.content[0].text);
 console.log("scrape:", scrapeJson.final_url, "| blocked:", scrapeJson.blocked, "| text starts:", JSON.stringify((scrapeJson.text || "").slice(0, 40)));

@@ -119,7 +119,7 @@ await new Promise((resolve) => setTimeout(resolve, 1500));
 const viaTor2 = await call("browser_scrape", { url: "https://check.torproject.org/api/ip?r=2", profile: "tortest", wait_seconds: 60, max_chars: 600 });
 assert.match(viaTor2.text ?? "", /"IsTor"\s*:\s*true/i); // tor=true mode must persist on the profile without re-passing it
 const exitIp2 = viaTor2.text.match(/\d+\.\d+\.\d+\.\d+/)?.[0];
-const backDirect = await call("browser_scrape", { url: "https://example.com", profile: "tortest", tor: false, wait_seconds: 15, max_chars: 500 });
+const backDirect = await call("browser_scrape", { url: "https://example.org", profile: "tortest", tor: false, wait_seconds: 15, max_chars: 500 });
 assert.equal(backDirect.proxy, "direct");
 assert.match(backDirect.text ?? "", /domain/i);
 const profilesWithTor = await call("browser_profiles");
