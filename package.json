@@ -2,6 +2,7 @@
   "name": "browser-scraper-mcp",
   "version": "1.0.0",
   "description": "MCP server exposing the browser-scraper Docker scraper (Chromium + noVNC) so agents can browse sites that block plain HTTP clients",
+  "license": "MIT",
   "type": "module",
   "private": true,
   "bin": {
@@ -13,6 +14,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
-    "zod": "^3.25.0"
+    "zod": "^4.6.7"
   }
 }

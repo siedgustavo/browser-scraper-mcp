@@ -200,8 +200,9 @@ function buildServer() {
   
   server.registerTool("browser_status", {
     title: "Browser status",
-    description: "Check whether the browser-scraper Docker container and its scraper API are running.",
-    inputSchema: {}
+    description: "Report whether the browser-scraper Docker container and its scraper API are running: probes the API /health endpoint, executes read-only checks (`docker compose ps` and a Tor status request), and starts or stops nothing.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }
   }, async () => {
     const alive = await health();
     const ps = MANAGED === "remote" ? [] : await compose(["-f", path.join(CONTAINER_DIR, "compose.yml"), "ps", "--format", "json"])
@@ -223,7 +224,8 @@ function buildServer() {
   server.registerTool("browser_start", {
     title: "Start browser container",
     description: "Start (building on first use) the browser-scraper Docker container. Chromium instances launch on demand per named profile; profiles and captures persist in the host state directory. Waits until the scraper API is healthy.",
-    inputSchema: {}
+    inputSchema: {},
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }
   }, async () => {
     const outcome = await ensureStarted();
     return jsonContent({ started: outcome.started, already_running: !outcome.started, health: outcome.health, vnc_url: VNC_URL, state_dir: STATE_DIR });
@@ -232,7 +234,8 @@ function buildServer() {
   server.registerTool("browser_stop", {
     title: "Stop browser container",
     description: "Stop and remove the browser-scraper Docker container. Named browser profiles (cookies/logins) and captures persist in the host state directory.",
-    inputSchema: {}
+    inputSchema: {},
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true }
   }, async () => {
     if (MANAGED === "remote") {
       return jsonContent({ stopped: false, note: `API ${API_URL} is platform-managed (BROWSER_MCP_MANAGED=remote); scale the workload down to stop it.`, state_dir: STATE_DIR });
@@ -256,7 +259,8 @@ function buildServer() {
       selector: z.string().optional().describe("Optional CSS selector to wait for (client-rendered pages)"),
       wait_seconds: z.number().int().min(1).max(120).optional().describe("Max seconds to wait for settling (default 20)"),
       max_chars: z.number().int().min(500).max(50000).optional().describe("Max characters of page.txt to return inline (default 6000)")
-    }
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
   }, async ({ url, profile, tor, click, selector, wait_seconds, max_chars }) => {
     await ensureStarted();
     const payload = await postForm("/scrape", {
@@ -276,7 +280,8 @@ function buildServer() {
       tor: z.boolean().optional().describe("Route this profile through Tor (see browser_scrape)"),
       selector: z.string().optional().describe("Optional CSS selector to wait for before capturing"),
       max_chars: z.number().int().min(500).max(50000).optional().describe("Max characters of page.txt to return inline (default 6000)")
-    }
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
   }, async ({ profile, tor, selector, max_chars }) => {
     await ensureStarted();
     const payload = await postForm("/capture", {
@@ -291,7 +296,8 @@ function buildServer() {
     description:
       "Check the bundled Tor: bootstrap progress, circuit state and SOCKS proxy URL. Scrape with tor=true once bootstrap reaches 100. " +
       "Tip: browser_scrape url=https://check.torproject.org/api/ip tor=true verifies the exit path end-to-end.",
-    inputSchema: {}
+    inputSchema: {},
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }
   }, async () => {
     await ensureStarted();
     return jsonContent(await getJson("/tor_status"));
@@ -302,7 +308,8 @@ function buildServer() {
     description:
       "Ask Tor for a new circuit (SIGNAL NEWNYM): subsequent tor=true requests appear from a different exit IP. Rotates the shared Tor proxy, i.e. all " +
       "profiles routing through tor get the new identity. Old established circuits may finish their current request on the previous IP.",
-    inputSchema: {}
+    inputSchema: {},
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
   }, async () => {
     await ensureStarted();
     const result = await postForm("/tor_new_identity", {});
@@ -314,7 +321,8 @@ function buildServer() {
     description:
       "List named browser sessions (profiles) on disk and running: cookie counts, last use, current tab, and host dir. Use it to discover existing logins " +
       "before deciding to reuse or create a profile, and after restarts to confirm sessions survived. Works even when the container is stopped (lists on-disk profiles).",
-    inputSchema: {}
+    inputSchema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }
   }, async () => {
     const alive = await health();
     if (!alive) {
@@ -337,7 +345,8 @@ function buildServer() {
       "Stop the Chromium instance for one named profile without touching the container or other sessions. Cookies flush to disk; the session persists and can be resumed later.",
     inputSchema: {
       profile: z.string().describe("Named persistent session to stop")
-    }
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }
   }, async ({ profile }) => {
     await ensureStarted();
     return jsonContent(await postForm("/profile_stop", { profile }));
@@ -363,7 +372,8 @@ function buildServer() {
         expression: z.string().optional().describe("JS expression for eval, e.g. \"document.title\"")
       })).max(25).describe("Ordered actions"),
       max_chars: z.number().int().min(500).max(50000).optional().describe("Max characters of page.txt to return inline (default 6000)")
-    }
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
   }, async ({ profile, tor, steps, max_chars }) => {
     await ensureStarted();
     const payload = await postForm("/interact", {
@@ -384,7 +394,8 @@ function buildServer() {
       file: z.enum(ARTIFACT_FILES).optional().describe("Artifact file to read (default page.txt)"),
       offset: z.number().int().min(0).optional().describe("Character offset to start reading (default 0)"),
       max_chars: z.number().int().min(500).max(200000).optional().describe("Max characters to return (default 20000)")
-    }
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   }, async ({ capture, file, offset, max_chars }) => {
     let dir;
     if (!capture || capture === "latest") {
